@@ -1,0 +1,93 @@
+version: '3'
+
+volumes:
+  payment_local_postgres_data: {}
+  payment_local_postgres_data_backups: {}
+
+services:
+  django: &django
+    build:
+      context: .
+      dockerfile: ./compose/local/django/Dockerfile
+    image: payment_local_django
+    container_name: payment_local_django
+    depends_on:
+      - postgres
+      - redis
+      - mailpit
+    volumes:
+      - .:/app:z
+    env_file:
+      - ./.envs/.local/.django
+      - ./.envs/.local/.postgres
+    ports:
+      - '8001:8001'
+    command: /start
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ./compose/production/postgres/Dockerfile
+    image: payment_production_postgres
+    container_name: payment_local_postgres
+    volumes:
+      - payment_local_postgres_data:/var/lib/postgresql/data
+      - payment_local_postgres_data_backups:/backups
+    env_file:
+      - ./.envs/.local/.postgres
+
+  docs:
+    image: payment_local_docs
+    container_name: payment_local_docs
+    build:
+      context: .
+      dockerfile: ./compose/local/docs/Dockerfile
+    env_file:
+      - ./.envs/.local/.django
+    volumes:
+      - ./docs:/docs:z
+      - ./config:/app/config:z
+      - ./payment:/app/payment:z
+    ports:
+      - '9001:9001'
+    command: /start-docs
+
+  mailpit:
+    image: axllent/mailpit:v1.8
+    container_name: payment_local_mailpit
+    ports:
+      - "8026:8026"
+
+  redis:
+    image: redis:6
+    container_name: payment_local_redis
+
+  celeryworker:
+    <<: *django
+    image: payment_local_celeryworker
+    container_name: payment_local_celeryworker
+    depends_on:
+      - redis
+      - postgres
+      - mailpit
+    ports: []
+    command: /start-celeryworker
+
+  celerybeat:
+    <<: *django
+    image: payment_local_celerybeat
+    container_name: payment_local_celerybeat
+    depends_on:
+      - redis
+      - postgres
+      - mailpit
+    ports: []
+    command: /start-celerybeat
+
+  flower:
+    <<: *django
+    image: payment_local_flower
+    container_name: payment_local_flower
+    ports:
+      - '5556:5556'
+    command: /start-flower
